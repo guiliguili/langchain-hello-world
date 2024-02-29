@@ -1,23 +1,24 @@
 import logging
 from getpass import getpass
-import os
+from operator import itemgetter
 
 import click
 
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import ConfigurableField
+from langchain_core.runnables import ConfigurableField, RunnableParallel, RunnablePassthrough
 from langchain_community.llms import Ollama
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
 
-from langchain_openai import ChatOpenAI
+from langchain_openai import AzureChatOpenAI, ChatOpenAI, OpenAIEmbeddings, AzureOpenAIEmbeddings
 
 from openai import RateLimitError
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
 
 @click.command()
 @click.option('-i',
@@ -25,85 +26,115 @@ from openai import RateLimitError
               type=str,
               required=True,
               help='Input message.')
-@click.option('-p',
-              '--provider',
-              type=click.Choice(['llama', 'openai', 'gpt4']),
+@click.option('-m',
+              '--model',
+              type=click.Choice(['llama', 'openai', 'azure']),
               default='llama',
-              help='LLM provider. Defaults to llama.')
+              help='LLM model. Defaults to llama.')
 @click.option('-r',
               '--retrieval',
               type=bool,
               default=False,
               help='Flag to enable Retrieval Augmented Generation (RAG). Defaults to false.')
-def main(input_message, provider, retrieval):
+def main(input_message, model, retrieval):
     """
     Query LLM from input.
     """
     logger = logging.getLogger('langchain-hello-world')
     
     logger.info('Setting-up LLM...')
-    match provider:
-        case 'gpt4':
-            OPENAI_API_KEY = getpass(prompt='Open AI API key (c.f. https://platform.openai.com/account/api-keys): ')
-            os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
+    azure_endpoint = 'dummmy'
+    openai_api_version = 'dummmy'
+    api_key = 'dummmy'
+    match model:
         case 'openai':
-            OPENAI_API_KEY = getpass(prompt='Open AI API key (c.f. https://platform.openai.com/account/api-keys): ')
-            os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
-        case _:
-            os.environ['OPENAI_API_KEY'] = 'dummy-key'
+            api_key = getpass(prompt='Open AI API key (c.f. https://platform.openai.com/account/api-keys): ')
+        case 'azure':
+            azure_endpoint = input(  "Azure Open AI endpoint URL : ")
+            openai_api_version=input("Azure Open AI API version  : ")
+            api_key = getpass(prompt='Azure Open AI API key      : ')
             
     llm = Ollama().configurable_alternatives(
-        ConfigurableField(id='llm'),
+        ConfigurableField(id='model'),
         default_key='llama',
-        openai=ChatOpenAI(),
-        gpt4=ChatOpenAI(model='gpt-4'),
+        openai=ChatOpenAI(model='gpt-3.5-turbo', api_key=api_key),
+        azure=AzureChatOpenAI(
+            model='gpt-35-turbo-16k',
+            api_key=api_key,
+            azure_endpoint=azure_endpoint, 
+            openai_api_version=openai_api_version
+        ),
     )
     logger.info('LLM set-up.')
     
     logger.info('Setting-up chain...')
+    
+    output_parser = StrOutputParser()
+    
+    prompt = ChatPromptTemplate.from_messages([
+            ('system', 'You are world class technical documentation writer.')])
+    chain = prompt | llm | output_parser
+    
     if (retrieval == False):
-        prompt = ChatPromptTemplate.from_messages([
-            ('system', 'You are world class technical documentation writer.'),
-            ('user', '{input}')
-        ])
-        output_parser = StrOutputParser()
-        chain = prompt | llm | output_parser
+        prompt.append(('user', 'Answer the following question: {input}'))
     else:
-        
-        logger.info('Setting-up retrieval chain...')
-        prompt = ChatPromptTemplate.from_template("""Answer the following question based only on the provided context:
+        prompt = prompt.append(
+            ('user', """Answer the following question based only on the provided context:
+            <context>
+            {context}
+            </context>
 
-        <context>
-        {context}
-        </context>
-
-        Question: {input}""")
+            Question: {input}""")
+        )
         
+        logger.info('Setting-up retrieval...')
+        
+        logger.info('Loading documents...')
         loader = WebBaseLoader('https://docs.smith.langchain.com')
         docs = loader.load()
+        logger.info('Documents loaded.')
         
-        embeddings = OllamaEmbeddings()
+        match model:
+            case 'llama':
+                embeddings = OllamaEmbeddings()
+            case 'openai':
+                embeddings = OpenAIEmbeddings(model='text-embedding-ada-002', api_key=api_key)
+            case 'azure':
+                embeddings = AzureOpenAIEmbeddings(
+                    model='text-embedding-ada-002',
+                    api_key=api_key, 
+                    azure_endpoint=azure_endpoint, 
+                    openai_api_version=openai_api_version
+                )
+        
+        logger.info('Splitting documents...')
         text_splitter = RecursiveCharacterTextSplitter()
         documents = text_splitter.split_documents(docs)
+        logger.info('Documents splitted.')
+        
+        logger.info('Vectorizing documents...')
         vector = FAISS.from_documents(documents, embeddings)
+        logger.info('Documents vectorized.')
+        
         retriever = vector.as_retriever()
         
-        document_chain = create_stuff_documents_chain(llm, prompt)
-        chain = create_retrieval_chain(retriever, document_chain)
-        logger.info('Retrieval chain setup.')
+        setup_and_retrieval = {
+            "context": itemgetter('input') | retriever | format_docs, 
+            "input": itemgetter('input')
+        }
+        chain = setup_and_retrieval | chain
+        
+        logger.info('Retrieval setup.')
     
     logger.info('Chain set-up.')
 
-    logger.info('Invoking LLM for provider \'%s\'...', provider)
+    logger.info('Invoking LLM for provider \'%s\'...', model)
         
     try:
-        response = chain.with_config(configurable={'llm': provider}).invoke({'input': input_message})
+        response = chain.with_config(configurable={'model': model}).invoke({'input': input_message})
         logger.info('LLM invoked. successfuly')
     
-        if (retrieval == False):
-            print(response)
-        else:
-            print(response['answer'])
+        print(response)
     except RateLimitError as e:
         logger.error('Rate limit error: %s', e.message)
     except Exception:
