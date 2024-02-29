@@ -3,7 +3,10 @@ channels:
   - defaults
   - conda-forge
 dependencies:
-  - python=3.12.1 
+  - python=3.11 
   - notebook=7.1.0
   - langchain=0.1.8
+  - beautifulsoup4=4.12.3
+  - faiss-cpu=1.7.4
+  - fake-useragent=1.4.0
   - click=8.1.7

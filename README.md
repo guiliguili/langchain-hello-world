@@ -28,7 +28,7 @@ The goal is also to apply most of the best practises to apply in [Python](https:
 ## Running from command line
 
 ```console
-python -m langchain_helloworld --help
+python langchain_helloworld/technical-writer.py --help
 ```
 
 ## Running Jupyter notebooks
