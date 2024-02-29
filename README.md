@@ -2,14 +2,17 @@
 
 This is a sample project demonstrating the use of [LangChain](https://python.langchain.com/).
 
-The goal is also to apply most of the best practises to apply in [Python](https://www.python.org) projects.
-
-## Installation
+## Prerequisites
 
 1. Install **Conda** using the [miniconda installer](https://conda.io/en/latest/miniconda.html) or [Homebrew](https://brew.sh/index_fr) if you are on macOS
    ```console
    brew install miniconda
    ```
+1. Install [Docker](https://docs.docker.com/engine/install/)
+1. Run the [Ollama Docker image](https://hub.docker.com/r/ollama/ollama)
+
+## Installation
+
 1. Create or update the **langchain-hello-world** conda environment
    ```console
    conda env create -f environment.yml
@@ -40,4 +43,3 @@ jupyter notebook
 ## Reference
 
 * [LangChain](https://python.langchain.com/)
-* [Google Python Style Guide](http://google.github.io/styleguide/pyguide.html)
