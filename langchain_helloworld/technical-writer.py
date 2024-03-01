@@ -131,10 +131,10 @@ def main(input_message, model, retrieval):
     logger.info('Invoking LLM for provider \'%s\'...', model)
         
     try:
-        response = chain.with_config(configurable={'model': model}).invoke({'input': input_message})
+        for chunk in chain.with_config(configurable={'model': model}).stream({'input': input_message}):
+            print(chunk, end='', flush=True)
+        print('')
         logger.info('LLM invoked. successfuly')
-    
-        print(response)
     except RateLimitError as e:
         logger.error('Rate limit error: %s', e.message)
     except Exception:
