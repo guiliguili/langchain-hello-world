@@ -17,35 +17,24 @@ from langchain_openai import AzureChatOpenAI, ChatOpenAI, OpenAIEmbeddings, Azur
 
 from openai import RateLimitError
 
+log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logging.basicConfig(level=logging.INFO, format=log_fmt)
+logger = logging.getLogger('langchain-hello-world')
+
+prompt_prefix = '>>> '
+
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-@click.command()
-@click.option('-i',
-              '--input-message',
-              type=str,
-              required=True,
-              help='Input message.')
-@click.option('-m',
-              '--model',
-              type=click.Choice(['llama', 'openai', 'azure']),
-              default='llama',
-              help='LLM model. Defaults to llama.')
-@click.option('-r',
-              '--retrieval',
-              type=bool,
-              default=False,
-              help='Flag to enable Retrieval Augmented Generation (RAG). Defaults to false.')
-def main(input_message, model, retrieval):
-    """
-    Query LLM from input.
-    """
-    logger = logging.getLogger('langchain-hello-world')
+def setup_chain(model, retrieval):
+    logger.info('Setting-up chain...')
     
     logger.info('Setting-up LLM...')
+    
     azure_endpoint = 'dummmy'
     openai_api_version = 'dummmy'
     api_key = 'dummmy'
+    
     match model:
         case 'openai':
             api_key = getpass(prompt='Open AI API key (c.f. https://platform.openai.com/account/api-keys): ')
@@ -67,12 +56,9 @@ def main(input_message, model, retrieval):
     )
     logger.info('LLM set-up.')
     
-    logger.info('Setting-up chain...')
-    
     output_parser = StrOutputParser()
     
-    prompt = ChatPromptTemplate.from_messages([
-            ('system', 'You are world class technical documentation writer.')])
+    prompt = ChatPromptTemplate.from_messages([('system', 'You are world class technical documentation writer.')])
     chain = prompt | llm | output_parser
     
     if (retrieval == False):
@@ -127,21 +113,51 @@ def main(input_message, model, retrieval):
         logger.info('Retrieval setup.')
     
     logger.info('Chain set-up.')
-
-    logger.info('Invoking LLM for provider \'%s\'...', model)
-        
-    try:
-        for chunk in chain.with_config(configurable={'model': model}).stream({'input': input_message}):
-            print(chunk, end='', flush=True)
-        print('')
-        logger.info('LLM invoked. successfuly')
-    except RateLimitError as e:
-        logger.error('Rate limit error: %s', e.message)
-    except Exception:
-        logger.exception('Unexpected error')
-
-if __name__ == '__main__':
-    log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    logging.basicConfig(level=logging.INFO, format=log_fmt)
     
+    return chain
+
+@click.command()
+@click.option('-m',
+              '--model',
+              type=click.Choice(['llama', 'openai', 'azure']),
+              default='llama',
+              help='LLM model. Defaults to llama.')
+@click.option('-r',
+              '--retrieval',
+              type=bool,
+              default=False,
+              help='Flag to enable Retrieval Augmented Generation (RAG). Defaults to false.')
+@click.argument('input_message', required= False)
+def main(model, retrieval, input_message):
+    """
+    Query LLM from input.
+    """
+    
+    chain = setup_chain(model, retrieval)
+    
+    if (input_message == None):
+        input_message = input(prompt_prefix)
+    else:
+        print(f'{prompt_prefix}{input_message}')
+    
+    while(input_message != '/bye'):
+        if (input_message == '/?'):
+            print("""Available Commands:
+            \t/bye            Exit
+            \t/?, /help       Help for a command
+            """)
+        else:
+            try:
+                logger.info('Invoking LLM for provider \'%s\'...', model)
+                for chunk in chain.with_config(configurable={'model': model}).stream({'input': input_message}):
+                    print(chunk, end='', flush=True)
+                print('')
+                logger.info('LLM invoked. successfuly')
+            except RateLimitError as e:
+                logger.error('Rate limit error: %s', e.message)
+            except Exception:
+                logger.exception('Unexpected error')
+        input_message = input(prompt_prefix)
+
+if __name__ == '__main__':    
     main()
