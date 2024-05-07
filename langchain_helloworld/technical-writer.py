@@ -1,6 +1,5 @@
 import click
 import logging
-import os
 
 from getpass import getpass
 from operator import itemgetter
@@ -13,11 +12,10 @@ from langchain_community.llms import Ollama
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain.globals import set_verbose, set_debug
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from langchain_openai import AzureChatOpenAI, ChatOpenAI, OpenAIEmbeddings, AzureOpenAIEmbeddings
-
-from openai import RateLimitError
 
 load_dotenv()
 
@@ -45,19 +43,19 @@ def setup_chain(model, retrieval):
     
     output_parser = StrOutputParser()
     
-    prompt = ChatPromptTemplate.from_messages([('system', 'You are world class technical documentation writer.')])
+    prompt = ChatPromptTemplate.from_messages([
+        ('system', 'You are world class technical documentation writer.'),
+        ('human', 'Answer the following question: {input}')                             
+    ])
+    
     chain = prompt | llm | output_parser
     
-    if (retrieval == False):
-        prompt.append(('human', 'Answer the following question: {input}'))
-    else:
+    if (retrieval == True):
         prompt = prompt.append(
-            ('human', """Answer the following question based only on the provided context:
+            ('human', """Your answer must be based only on the provided context:
             <context>
             {context}
-            </context>
-
-            Question: {input}""")
+            </context>""")
         )
         
         logger.info('Setting-up retrieval...')
@@ -103,17 +101,33 @@ def setup_chain(model, retrieval):
               '--model',
               type=click.Choice(['llama', 'openai', 'azure']),
               default='llama',
-              help='LLM model. Defaults to llama.')
+              show_default=True,
+              help='LLM model.')
 @click.option('-r',
               '--retrieval',
-              type=bool,
               default=False,
+              is_flag=True,
+              show_default=True,
               help='Flag to enable Retrieval Augmented Generation (RAG). Defaults to false.')
+@click.option('-v',
+              '--verbose',
+              is_flag=True,
+              default=False,
+              show_default=True,
+              help='Verbose flag.')
+@click.option('-x',
+              '--debug',
+              is_flag=True,
+              default=False,
+              show_default=True,
+              help='Verbose flag.')
 @click.argument('input_message', required= False)
-def main(model, retrieval, input_message):
+def main(model, retrieval, verbose, debug, input_message):
     """
     Query LLM from input.
     """
+    set_verbose(verbose)
+    set_debug(debug)
     
     chain = setup_chain(model, retrieval)
     
@@ -135,8 +149,6 @@ def main(model, retrieval, input_message):
                     print(chunk, end='', flush=True)
                 print('')
                 logger.info('LLM invoked. successfuly')
-            except RateLimitError as e:
-                logger.error('Rate limit error: %s', e.message)
             except Exception:
                 logger.exception('Unexpected error')
         input_message = input(prompt_prefix)
