@@ -10,3 +10,4 @@ dependencies:
   - faiss-cpu=1.7.4
   - fake-useragent=1.4.0
   - click=8.1.7
+  - python-dotenv=0.21.0

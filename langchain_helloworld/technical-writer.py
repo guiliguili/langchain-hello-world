@@ -1,8 +1,10 @@
+import click
 import logging
+import os
+
 from getpass import getpass
 from operator import itemgetter
-
-import click
+from dotenv import load_dotenv
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -17,6 +19,8 @@ from langchain_openai import AzureChatOpenAI, ChatOpenAI, OpenAIEmbeddings, Azur
 
 from openai import RateLimitError
 
+load_dotenv()
+
 log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=log_fmt)
 logger = logging.getLogger('langchain-hello-world')
@@ -30,29 +34,12 @@ def setup_chain(model, retrieval):
     logger.info('Setting-up chain...')
     
     logger.info('Setting-up LLM...')
-    
-    azure_endpoint = 'dummmy'
-    openai_api_version = 'dummmy'
-    api_key = 'dummmy'
-    
-    match model:
-        case 'openai':
-            api_key = getpass(prompt='Open AI API key (c.f. https://platform.openai.com/account/api-keys): ')
-        case 'azure':
-            azure_endpoint = input(  "Azure Open AI endpoint URL : ")
-            openai_api_version=input("Azure Open AI API version  : ")
-            api_key = getpass(prompt='Azure Open AI API key      : ')
             
     llm = Ollama().configurable_alternatives(
         ConfigurableField(id='model'),
         default_key='llama',
-        openai=ChatOpenAI(model='gpt-3.5-turbo', api_key=api_key),
-        azure=AzureChatOpenAI(
-            model='gpt-35-turbo-16k',
-            api_key=api_key,
-            azure_endpoint=azure_endpoint, 
-            openai_api_version=openai_api_version
-        ),
+        openai=ChatOpenAI(model='gpt-3.5-turbo'),
+        azure=AzureChatOpenAI(model='gpt-35-turbo-16k'),
     )
     logger.info('LLM set-up.')
     
@@ -62,10 +49,10 @@ def setup_chain(model, retrieval):
     chain = prompt | llm | output_parser
     
     if (retrieval == False):
-        prompt.append(('user', 'Answer the following question: {input}'))
+        prompt.append(('human', 'Answer the following question: {input}'))
     else:
         prompt = prompt.append(
-            ('user', """Answer the following question based only on the provided context:
+            ('human', """Answer the following question based only on the provided context:
             <context>
             {context}
             </context>
@@ -84,14 +71,9 @@ def setup_chain(model, retrieval):
             case 'llama':
                 embeddings = OllamaEmbeddings()
             case 'openai':
-                embeddings = OpenAIEmbeddings(model='text-embedding-ada-002', api_key=api_key)
+                embeddings = OpenAIEmbeddings(model='text-embedding-ada-002')
             case 'azure':
-                embeddings = AzureOpenAIEmbeddings(
-                    model='text-embedding-ada-002',
-                    api_key=api_key, 
-                    azure_endpoint=azure_endpoint, 
-                    openai_api_version=openai_api_version
-                )
+                embeddings = AzureOpenAIEmbeddings(model='text-embedding-ada-002')
         
         logger.info('Splitting documents...')
         text_splitter = RecursiveCharacterTextSplitter()

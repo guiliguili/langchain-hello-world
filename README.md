@@ -27,7 +27,12 @@ This is a sample project demonstrating the use of [LangChain](https://python.lan
    ```console
    pip install langchain-openai
    ```
- 
+
+## Setup
+
+Edit file [.env](./.env) to provide configuration for OpenAI and Azure OpenAI.
+
+
 ## Running from command line
 
 ```console
