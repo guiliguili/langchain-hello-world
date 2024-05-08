@@ -1,5 +1,6 @@
 import click
 import logging
+import textwrap
 
 from getpass import getpass
 from operator import itemgetter
@@ -7,12 +8,13 @@ from dotenv import load_dotenv
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import ConfigurableField
+from langchain_core.runnables import ConfigurableField, RunnableParallel, RunnablePassthrough, RunnableLambda
 from langchain_community.llms import Ollama
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.globals import set_verbose, set_debug
+from langchain.memory import ConversationBufferMemory
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from langchain_openai import AzureChatOpenAI, ChatOpenAI, OpenAIEmbeddings, AzureOpenAIEmbeddings
@@ -28,7 +30,7 @@ prompt_prefix = '>>> '
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-def setup_chain(model, retrieval):
+def setup_chain(model, conversational, retrieval):
     logger.info('Setting-up chain...')
     
     logger.info('Setting-up LLM...')
@@ -44,18 +46,44 @@ def setup_chain(model, retrieval):
     output_parser = StrOutputParser()
     
     prompt = ChatPromptTemplate.from_messages([
-        ('system', 'You are world class technical documentation writer.'),
-        ('human', 'Answer the following question: {input}')                             
+        (
+            'system', 
+             textwrap.dedent("""\
+                 You are a world class technical documentation writer having a conversation with a human.
+                 If you do not know the answer to a question, you truthfully say you do not know.""")
+        )
     ])
-    
     chain = prompt | llm | output_parser
     
+    if (conversational == True):
+        prompt.append(
+            (
+                'system', 
+                textwrap.dedent("""\
+                    Your answers are based on the provided conversation:
+                    <conversation>
+                    {chat_history}
+                    </conversation>""")
+            )
+        )
+        memory = ConversationBufferMemory()
+        memory.save_context({"input": "Hi, my name is Guillaume."}, 
+                         {"output": "What's up?"})
+        loaded_memory = RunnablePassthrough.assign(
+            chat_history=RunnableLambda(memory.load_memory_variables) | itemgetter("history")
+        )
+        chain = loaded_memory | chain
+    
     if (retrieval == True):
-        prompt = prompt.append(
-            ('human', """Your answer must be based only on the provided context:
-            <context>
-            {context}
-            </context>""")
+        prompt.append(
+            (
+                'system', 
+                 textwrap.dedent("""\
+                     Your answers are based on the provided context:
+                     <context>
+                     {context}
+                     </context>""")
+            )
         )
         
         logger.info('Setting-up retrieval...')
@@ -84,13 +112,15 @@ def setup_chain(model, retrieval):
         
         retriever = vector.as_retriever()
         
-        setup_and_retrieval = {
+        setup_and_retrieval = RunnableParallel({
             "context": itemgetter('input') | retriever | format_docs, 
             "input": itemgetter('input')
-        }
+        })
         chain = setup_and_retrieval | chain
         
         logger.info('Retrieval setup.')
+    
+    prompt.append(('human', '{input}'))
     
     logger.info('Chain set-up.')
     
@@ -103,12 +133,18 @@ def setup_chain(model, retrieval):
               default='llama',
               show_default=True,
               help='LLM model.')
+@click.option('-c',
+              '--conversational',
+              default=False,
+              is_flag=True,
+              show_default=True,
+              help='Flag to enable conversational mode.')
 @click.option('-r',
               '--retrieval',
               default=False,
               is_flag=True,
               show_default=True,
-              help='Flag to enable Retrieval Augmented Generation (RAG). Defaults to false.')
+              help='Flag to enable Retrieval Augmented Generation (RAG).')
 @click.option('-v',
               '--verbose',
               is_flag=True,
@@ -122,14 +158,14 @@ def setup_chain(model, retrieval):
               show_default=True,
               help='Verbose flag.')
 @click.argument('input_message', required= False)
-def main(model, retrieval, verbose, debug, input_message):
+def main(model, conversational, retrieval, verbose, debug, input_message):
     """
     Query LLM from input.
     """
     set_verbose(verbose)
     set_debug(debug)
     
-    chain = setup_chain(model, retrieval)
+    chain = setup_chain(model, conversational, retrieval)
     
     if (input_message == None):
         input_message = input(prompt_prefix)
