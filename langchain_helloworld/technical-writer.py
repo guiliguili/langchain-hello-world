@@ -6,7 +6,9 @@ from getpass import getpass
 from operator import itemgetter
 from dotenv import load_dotenv
 
+from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts.chat import SystemMessagePromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import ConfigurableField, RunnableParallel, RunnablePassthrough, RunnableLambda
 from langchain_community.llms import Ollama
@@ -46,25 +48,19 @@ def setup_chain(model, conversational, retrieval):
     output_parser = StrOutputParser()
     
     prompt = ChatPromptTemplate.from_messages([
-        (
-            'system', 
-             textwrap.dedent("""\
-                 You are a world class technical documentation writer having a conversation with a human.
-                 If you do not know the answer to a question, you truthfully say you do not know.""")
-        )
+        SystemMessage(content=textwrap.dedent("""\
+            You are a world class technical documentation writer having a conversation with a human.
+            If you do not know the answer to a question, you truthfully say you do not know."""))
     ])
     chain = prompt | llm | output_parser
     
     if (conversational == True):
         prompt.append(
-            (
-                'system', 
-                textwrap.dedent("""\
-                    Your answers are based on the provided conversation:
-                    <conversation>
-                    {chat_history}
-                    </conversation>""")
-            )
+            SystemMessagePromptTemplate.from_template(textwrap.dedent("""\
+                Your answers are based on the provided conversation:
+                <conversation>
+                {chat_history}
+                </conversation>"""))
         )
         memory = ConversationBufferMemory()
         memory.save_context({"input": "Hi, my name is Guillaume."}, 
@@ -76,13 +72,11 @@ def setup_chain(model, conversational, retrieval):
     
     if (retrieval == True):
         prompt.append(
-            (
-                'system', 
-                 textwrap.dedent("""\
-                     Your answers are based on the provided context:
-                     <context>
-                     {context}
-                     </context>""")
+            SystemMessagePromptTemplate.from_template(textwrap.dedent("""\
+                Your answers are based on the provided context:
+                <context>
+                {context}
+                </context>""")
             )
         )
         
