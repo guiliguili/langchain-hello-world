@@ -53,6 +53,23 @@ def setup_chain(model, conversational, retrieval):
             If you do not know the answer to a question, you truthfully say you do not know."""))
     ])
     chain = prompt | llm | output_parser
+        
+    if (conversational == True):
+        prompt.append(
+            SystemMessagePromptTemplate.from_template(textwrap.dedent("""\
+                Your answers are based on the provided conversation:
+                <conversation>
+                {chat_history}
+                </conversation>""")
+            )
+        )
+        memory = ConversationBufferMemory()
+        memory.save_context({"input": "Hi, my name is Guillaume."}, 
+                         {"output": "What's up?"})
+        loaded_memory = RunnablePassthrough.assign(
+            chat_history=RunnableLambda(memory.load_memory_variables) | itemgetter("history")
+        )
+        chain = loaded_memory | chain
     
     if (retrieval == True):
         prompt.append(
@@ -97,23 +114,6 @@ def setup_chain(model, conversational, retrieval):
         chain = setup_and_retrieval | chain
         
         logger.info('Retrieval setup.')
-        
-    if (conversational == True):
-        prompt.append(
-            SystemMessagePromptTemplate.from_template(textwrap.dedent("""\
-                Your answers are based on the provided conversation:
-                <conversation>
-                {chat_history}
-                </conversation>""")
-            )
-        )
-        memory = ConversationBufferMemory()
-        memory.save_context({"input": "Hi, my name is Guillaume."}, 
-                         {"output": "What's up?"})
-        loaded_memory = RunnablePassthrough.assign(
-            chat_history=RunnableLambda(memory.load_memory_variables) | itemgetter("history")
-        )
-        chain = loaded_memory | chain
     
     prompt.append(
         HumanMessagePromptTemplate.from_template('{input}')
