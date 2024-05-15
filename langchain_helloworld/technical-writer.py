@@ -1,23 +1,26 @@
 import click
 import logging
 import textwrap
+import uuid
 
-from getpass import getpass
 from operator import itemgetter
 from dotenv import load_dotenv
 
+from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import SystemMessage
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.prompts.chat import HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import ConfigurableField, RunnablePassthrough, RunnableLambda
+from langchain_core.runnables import ConfigurableField, RunnablePassthrough
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain.chains import create_history_aware_retriever
 from langchain_community.llms import Ollama
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.globals import set_verbose, set_debug
-from langchain.memory import ConversationBufferMemory
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.chat_message_histories.in_memory import ChatMessageHistory
 
 from langchain_openai import AzureChatOpenAI, ChatOpenAI, OpenAIEmbeddings, AzureOpenAIEmbeddings
 
@@ -31,6 +34,14 @@ prompt_prefix = '>>> '
 
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
+
+### Statefully manage chat history ###
+store = {}
+
+def get_session_history(session_id: str) -> BaseChatMessageHistory:
+    if session_id not in store:
+        store[session_id] = ChatMessageHistory()
+    return store[session_id]
 
 def setup_chain(model, conversational, retrieval):
     logger.info('Setting-up chain...')
@@ -48,13 +59,14 @@ def setup_chain(model, conversational, retrieval):
     output_parser = StrOutputParser()
     
     prompt = ChatPromptTemplate.from_messages([
-        SystemMessage(content=textwrap.dedent("""\
-            You are a world class technical documentation writer having a conversation with a human.
-            If you do not know the answer to a question, you truthfully say you do not know."""))
+        SystemMessage(content='You are a world class technical documentation writer having a conversation with a human.'
+            + 'If you do not know the answer to a question, you truthfully say you do not know.')
     ])
     chain = prompt | llm | output_parser
     
     if (retrieval == True):
+        logger.info('Setting-up retrieval...')
+        
         prompt.append(
             SystemMessagePromptTemplate.from_template(textwrap.dedent("""\
                 Your answers are based on the provided context:
@@ -63,8 +75,6 @@ def setup_chain(model, conversational, retrieval):
                 </context>""")
             )
         )
-        
-        logger.info('Setting-up retrieval...')
         
         logger.info('Loading documents...')
         loader = WebBaseLoader('https://docs.smith.langchain.com')
@@ -90,29 +100,40 @@ def setup_chain(model, conversational, retrieval):
         
         retriever = vector.as_retriever()
         
-        setup_and_retrieval = RunnablePassthrough.assign(
-            context = itemgetter('input') | retriever | format_docs
+        if (conversational == True):
+            contextualize_q_prompt = ChatPromptTemplate.from_messages([
+                SystemMessage('Given a chat history and the latest user question which might reference context in the chat history, '
+                    + 'formulate a standalone question which can be understood without the chat history.'
+                    + 'Do NOT answer the question, just reformulate it if needed and otherwise return it as is.'
+                ),
+                MessagesPlaceholder('chat_history'),
+                HumanMessagePromptTemplate.from_template('{input}')
+            ])
+            retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
+        else:
+            retriever = itemgetter('input') | retriever
+        
+        retrieval = RunnablePassthrough.assign(
+            context = retriever | format_docs
         )
-        chain = setup_and_retrieval | chain
+        chain = retrieval | chain
         
         logger.info('Retrieval setup.')
         
     if (conversational == True):
-        prompt.append(
-            SystemMessagePromptTemplate.from_template(textwrap.dedent("""\
-                Your answers are based on the provided conversation:
-                <conversation>
-                {chat_history}
-                </conversation>""")
-            )
+        logger.info('Setting-up conversation...')
+        
+        prompt.append(MessagesPlaceholder('chat_history'))
+        
+        chain = RunnableWithMessageHistory(
+            chain,
+            get_session_history,
+            input_messages_key="input",
+            history_messages_key="chat_history",
+            output_messages_key="output"
         )
-        memory = ConversationBufferMemory()
-        memory.save_context({"input": "Hi, my name is Guillaume."}, 
-                         {"output": "What's up?"})
-        loaded_memory = RunnablePassthrough.assign(
-            chat_history=RunnableLambda(memory.load_memory_variables) | itemgetter("history")
-        )
-        chain = loaded_memory | chain
+        
+        logger.info('Conversation setup.')
     
     prompt.append(
         HumanMessagePromptTemplate.from_template('{input}')
@@ -161,7 +182,14 @@ def main(model, conversational, retrieval, verbose, debug, input_message):
     set_verbose(verbose)
     set_debug(debug)
     
+    session_id = uuid.uuid4()
+    
     chain = setup_chain(model, conversational, retrieval)
+    chain = chain.with_config(configurable={
+        'model': model,
+        'session_id': session_id,
+        }
+    )
     
     if (input_message == None):
         input_message = input(prompt_prefix)
@@ -177,7 +205,7 @@ def main(model, conversational, retrieval, verbose, debug, input_message):
         else:
             try:
                 logger.info('Invoking LLM for provider \'%s\'...', model)
-                for chunk in chain.with_config(configurable={'model': model}).stream({'input': input_message}):
+                for chunk in chain.stream({'input': input_message}):
                     print(chunk, end='', flush=True)
                 print('')
                 logger.info('LLM invoked. successfuly')
