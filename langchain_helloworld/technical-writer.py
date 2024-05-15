@@ -10,7 +10,7 @@ from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.prompts.chat import HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import ConfigurableField, RunnableParallel, RunnablePassthrough, RunnableLambda
+from langchain_core.runnables import ConfigurableField, RunnablePassthrough, RunnableLambda
 from langchain_community.llms import Ollama
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.embeddings import OllamaEmbeddings
@@ -53,23 +53,6 @@ def setup_chain(model, conversational, retrieval):
             If you do not know the answer to a question, you truthfully say you do not know."""))
     ])
     chain = prompt | llm | output_parser
-        
-    if (conversational == True):
-        prompt.append(
-            SystemMessagePromptTemplate.from_template(textwrap.dedent("""\
-                Your answers are based on the provided conversation:
-                <conversation>
-                {chat_history}
-                </conversation>""")
-            )
-        )
-        memory = ConversationBufferMemory()
-        memory.save_context({"input": "Hi, my name is Guillaume."}, 
-                         {"output": "What's up?"})
-        loaded_memory = RunnablePassthrough.assign(
-            chat_history=RunnableLambda(memory.load_memory_variables) | itemgetter("history")
-        )
-        chain = loaded_memory | chain
     
     if (retrieval == True):
         prompt.append(
@@ -107,13 +90,29 @@ def setup_chain(model, conversational, retrieval):
         
         retriever = vector.as_retriever()
         
-        setup_and_retrieval = RunnableParallel({
-            "context": itemgetter('input') | retriever | format_docs, 
-            "input": itemgetter('input')
-        })
+        setup_and_retrieval = RunnablePassthrough.assign(
+            context = itemgetter('input') | retriever | format_docs
+        )
         chain = setup_and_retrieval | chain
         
         logger.info('Retrieval setup.')
+        
+    if (conversational == True):
+        prompt.append(
+            SystemMessagePromptTemplate.from_template(textwrap.dedent("""\
+                Your answers are based on the provided conversation:
+                <conversation>
+                {chat_history}
+                </conversation>""")
+            )
+        )
+        memory = ConversationBufferMemory()
+        memory.save_context({"input": "Hi, my name is Guillaume."}, 
+                         {"output": "What's up?"})
+        loaded_memory = RunnablePassthrough.assign(
+            chat_history=RunnableLambda(memory.load_memory_variables) | itemgetter("history")
+        )
+        chain = loaded_memory | chain
     
     prompt.append(
         HumanMessagePromptTemplate.from_template('{input}')
