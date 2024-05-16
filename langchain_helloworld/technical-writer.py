@@ -3,7 +3,6 @@ import logging
 import textwrap
 import uuid
 
-from operator import itemgetter
 from dotenv import load_dotenv
 
 from langchain_core.chat_history import BaseChatMessageHistory
@@ -33,17 +32,25 @@ logger = logging.getLogger('langchain-hello-world')
 prompt_prefix = '>>> '
 
 def format_docs(docs):
+    """
+    Format documents by joining them together separated by 2 lines
+    """
     return "\n\n".join(doc.page_content for doc in docs)
 
-### Statefully manage chat history ###
 store = {}
 
 def get_session_history(session_id: str) -> BaseChatMessageHistory:
+    """
+    Statefully manage chat history
+    """
     if session_id not in store:
         store[session_id] = ChatMessageHistory()
     return store[session_id]
 
 def setup_chain(model, conversational, retrieval):
+    """
+    Setup chain
+    """
     logger.info('Setting-up chain...')
     
     logger.info('Setting-up LLM...')
@@ -78,7 +85,7 @@ def setup_chain(model, conversational, retrieval):
         
         logger.info('Loading documents...')
         loader = WebBaseLoader('https://docs.smith.langchain.com')
-        docs = loader.load()
+        documents = loader.load()
         logger.info('Documents loaded.')
         
         match model:
@@ -91,27 +98,24 @@ def setup_chain(model, conversational, retrieval):
         
         logger.info('Splitting documents...')
         text_splitter = RecursiveCharacterTextSplitter()
-        documents = text_splitter.split_documents(docs)
+        document_splits = text_splitter.split_documents(documents)
         logger.info('Documents splitted.')
         
         logger.info('Vectorizing documents...')
-        vector = FAISS.from_documents(documents, embeddings)
+        vector = FAISS.from_documents(document_splits, embeddings)
         logger.info('Documents vectorized.')
         
         retriever = vector.as_retriever()
         
-        if (conversational == True):
-            contextualize_q_prompt = ChatPromptTemplate.from_messages([
-                SystemMessage('Given a chat history and the latest user question which might reference context in the chat history, '
-                    + 'formulate a standalone question which can be understood without the chat history.'
-                    + 'Do NOT answer the question, just reformulate it if needed and otherwise return it as is.'
-                ),
-                MessagesPlaceholder('chat_history'),
-                HumanMessagePromptTemplate.from_template('{input}')
-            ])
-            retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
-        else:
-            retriever = itemgetter('input') | retriever
+        contextualize_q_prompt = ChatPromptTemplate.from_messages([
+            SystemMessage('Given a chat history and the latest user question which might reference context in the chat history, '
+                + 'formulate a standalone question which can be understood without the chat history.'
+                + 'Do NOT answer the question, just reformulate it if needed and otherwise return it as is.'
+            ),
+            MessagesPlaceholder('chat_history'),
+            HumanMessagePromptTemplate.from_template('{input}')
+        ])
+        retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
         
         retrieval = RunnablePassthrough.assign(
             context = retriever | format_docs
@@ -121,7 +125,7 @@ def setup_chain(model, conversational, retrieval):
         logger.info('Retrieval setup.')
         
     if (conversational == True):
-        logger.info('Setting-up conversation...')
+        logger.info('Setting-up conversational...')
         
         prompt.append(MessagesPlaceholder('chat_history'))
         
@@ -133,7 +137,7 @@ def setup_chain(model, conversational, retrieval):
             output_messages_key="output"
         )
         
-        logger.info('Conversation setup.')
+        logger.info('Conversational setup.')
     
     prompt.append(
         HumanMessagePromptTemplate.from_template('{input}')
