@@ -159,13 +159,13 @@ def setup_chain(model, conversational, retrieval):
               default=False,
               is_flag=True,
               show_default=True,
-              help='Flag to enable conversational mode.')
+              help='Flag to enable/disable conversational mode.')
 @click.option('-r',
               '--retrieval',
               default=False,
               is_flag=True,
               show_default=True,
-              help='Flag to enable Retrieval Augmented Generation (RAG).')
+              help='Flag to enable/disable Retrieval Augmented Generation (RAG).')
 @click.option('-v',
               '--verbose',
               is_flag=True,
