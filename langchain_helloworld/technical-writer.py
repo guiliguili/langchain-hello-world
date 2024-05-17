@@ -177,7 +177,7 @@ def setup_chain(model, conversational, retrieval):
               is_flag=True,
               default=False,
               show_default=True,
-              help='Verbose flag.')
+              help='Debug flag.')
 @click.argument('input_message', required= False)
 def main(model, conversational, retrieval, verbose, debug, input_message):
     """
