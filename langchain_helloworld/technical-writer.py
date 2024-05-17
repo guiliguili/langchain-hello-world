@@ -202,10 +202,12 @@ def main(model, conversational, retrieval, verbose, debug, input_message):
     
     while(input_message != '/bye'):
         if (input_message == '/?'):
-            print("""Available Commands:
-            \t/bye            Exit
-            \t/?, /help       Help for a command
-            """)
+            print(textwrap.dedent("""\
+                Available Commands:
+                \t/bye  Exit
+                \t/?    Print this help message
+                """)
+            )
         else:
             try:
                 logger.info('Invoking LLM for provider \'%s\'...', model)
