@@ -66,7 +66,7 @@ def setup_chain(model, conversational, retrieval):
     output_parser = StrOutputParser()
     
     prompt = ChatPromptTemplate.from_messages([
-        SystemMessage(content='You are a world class technical documentation writer having a conversation with a human.'
+        SystemMessage(content='You are a world class technical documentation writer having a conversation with a human. '
             + 'If you do not know the answer to a question, you truthfully say you do not know.')
     ])
     chain = prompt | llm | output_parser
