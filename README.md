@@ -2,7 +2,13 @@
 
 This is a sample project demonstrating the use of [LangChain](https://python.langchain.com/).
 
-## Prerequisites
+More specifically it implements the following capabilities :
+* Retrieval Augmented Generation (RAG)
+* Conversational AI with Memory Mangement
+* Configurable LLM's
+* Streaming
+
+## Pre-requisites
 
 1. Install **Conda** using the [miniconda installer](https://conda.io/en/latest/miniconda.html) or [Homebrew](https://brew.sh/index_fr) if you are on macOS
    ```console
@@ -31,7 +37,6 @@ This is a sample project demonstrating the use of [LangChain](https://python.lan
 ## Setup
 
 Edit file [.env](./.env) to provide configuration for OpenAI and Azure OpenAI.
-
 
 ## Running from command line
 
